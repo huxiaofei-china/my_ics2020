@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <memory/paddr.h>
 
 void cpu_exec(uint64_t);
 int is_batch_mode();
@@ -32,12 +33,17 @@ static int cmd_c(char *args) {
   return 0;
 }
 
-
 static int cmd_q(char *args) {
   return -1;
 }
 
 static int cmd_help(char *args);
+
+static int cmd_si(char *args);
+
+static int cmd_info(char* args);
+
+static int cmd_x(char* args);
 
 static struct {
   char *name;
@@ -47,6 +53,9 @@ static struct {
   { "help", "Display informations about all supported commands", cmd_help },
   { "c", "Continue the execution of the program", cmd_c },
   { "q", "Exit NEMU", cmd_q },
+  { "si", "Excute N step program, and stop. Usage: si N", cmd_si},
+  { "info", "Print information of reg or watchpoint. Usage: info r|w", cmd_info},
+  { "x", "Print data start from EXPR with length N. Usage: x N EXPR", cmd_x},
 
   /* TODO: Add more commands */
 
@@ -73,6 +82,94 @@ static int cmd_help(char *args) {
       }
     }
     printf("Unknown command '%s'\n", arg);
+  }
+  return 0;
+}
+
+static int cmd_si(char* args)
+{
+  char *arg = strtok(NULL, " ");
+
+  if (arg == NULL) {
+    /* no argument given */
+    printf("si usage: si N (N is number program to excute)\n");
+  }
+  else {
+    int n = atoi(arg);
+    if(n > 0)
+    {
+      cpu_exec(n);
+      Log("si step %d, and current pc is: %x\n", n, cpu.pc);
+    }
+    else
+    {
+      Log("error,si N, and N should bigger than 0\n");
+    }
+  }
+  return 0;
+}
+
+static int cmd_info(char* args)
+{
+  char *arg = strtok(NULL, " ");
+
+  if (arg == NULL) {
+    /* no argument given */
+    printf("info usage: info r|w \n");
+  }
+  else {
+    switch (*arg)
+    {
+    case 'r': 
+      isa_reg_display();
+      break;
+    case 'w':
+      Log("info w is excuted, but it's not implemented yet.\n");
+      break;
+    default:
+      Log("info wrong args! Usage: info r|w\n");
+      break;
+    }
+  }
+  return 0;
+}
+
+static int cmd_x(char* args)
+{
+  char *arg = strtok(NULL, " ");
+  char *sub_arg = NULL;
+  uint32_t N;
+  uint32_t EXPR;
+  int i;
+  if (arg == NULL) {
+    /* no argument given */
+    printf("missing arg N. x usage: x N EXPR\n");
+  }
+  else {
+    N = atoi(arg);
+    if (N <= 0)
+    {
+      printf("N should bigger than 0.\n");
+      return 0;
+    }
+    
+    sub_arg = strtok(NULL, " ");
+    if (sub_arg == NULL)
+    {
+      printf("missing arg EXPR. x usage: x N EXPR\n");
+      return 0;
+    }
+    else
+    {
+      EXPR = strtol(sub_arg, NULL, 16);
+      printf("0x%x :\t", EXPR);
+      for (i = 0; i < N; i++)
+      {
+        printf("0x%.8x\t", paddr_read(EXPR + i*4, 4));
+      }
+      printf("\n");
+    }
+     
   }
   return 0;
 }

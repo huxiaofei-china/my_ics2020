@@ -9,6 +9,13 @@ const char *regsl[] = {
 };
 
 void isa_reg_display() {
+  int i;
+  printf("pc: %x\t", cpu.pc);
+  for (i = 0; i < (sizeof(cpu.gpr)/sizeof(cpu.gpr[0])); i++)
+  {
+    printf("%s: %x\t", regsl[i], cpu.gpr[i]._32);
+  }
+  printf("\n");
 }
 
 word_t isa_reg_str2val(const char *s, bool *success) {
