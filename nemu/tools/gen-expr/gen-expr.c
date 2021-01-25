@@ -15,9 +15,58 @@ static char *code_format =
 "  printf(\"%%u\", result); "
 "  return 0; "
 "}";
+static int buf_pos = 0;
+
+static unsigned int choose(unsigned int n)
+{
+  unsigned int num = rand();
+  return (num % n);
+}
+
+static inline void gen_rand_op()
+{
+  switch (choose(4))
+  {
+  case 0: 
+    buf[buf_pos] = '+';
+    break;
+  case 1:
+    buf[buf_pos] = '-';
+    break;
+  case 2:
+    buf[buf_pos] = '*';
+    break;
+  case 3:
+    buf[buf_pos] = '/';
+    break;
+  default:
+    printf("error, choose(4) gererate wrong number");
+    break;
+  }
+  buf_pos++;
+}
 
 static inline void gen_rand_expr() {
-  buf[0] = '\0';
+  switch (choose(3))
+  {
+  case 0:
+    sprintf(buf+buf_pos, "%u", choose(5000));
+    buf_pos += strlen(buf+buf_pos);
+    break;
+  case 1:
+    buf[buf_pos] = '(';
+    buf_pos++;
+    gen_rand_expr();
+    buf[buf_pos] = ')';
+    buf_pos++;
+    break;
+  default:
+    gen_rand_expr(); 
+    gen_rand_op(); 
+    gen_rand_expr(); 
+    break;
+  }
+  buf[buf_pos] = '\0';
 }
 
 int main(int argc, char *argv[]) {
@@ -30,7 +79,7 @@ int main(int argc, char *argv[]) {
   int i;
   for (i = 0; i < loop; i ++) {
     gen_rand_expr();
-
+    buf_pos = 0;
     sprintf(code_buf, code_format, buf);
 
     FILE *fp = fopen("/tmp/.code.c", "w");

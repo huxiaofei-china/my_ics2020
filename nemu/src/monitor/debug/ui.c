@@ -57,8 +57,6 @@ static struct {
   { "info", "Print information of reg or watchpoint. Usage: info r|w", cmd_info},
   { "x", "Print data start from EXPR with length N. Usage: x N EXPR", cmd_x},
 
-  /* TODO: Add more commands */
-
 };
 
 #define NR_CMD (sizeof(cmd_table) / sizeof(cmd_table[0]))
@@ -139,8 +137,9 @@ static int cmd_x(char* args)
   char *arg = strtok(NULL, " ");
   char *sub_arg = NULL;
   uint32_t N;
-  uint32_t EXPR;
-  int i;
+  //uint32_t EXPR;
+  //int i;
+  bool regex_flag;
   if (arg == NULL) {
     /* no argument given */
     printf("missing arg N. x usage: x N EXPR\n");
@@ -153,7 +152,7 @@ static int cmd_x(char* args)
       return 0;
     }
     
-    sub_arg = strtok(NULL, " ");
+    sub_arg = strtok(NULL, "");
     if (sub_arg == NULL)
     {
       printf("missing arg EXPR. x usage: x N EXPR\n");
@@ -161,13 +160,15 @@ static int cmd_x(char* args)
     }
     else
     {
-      EXPR = strtol(sub_arg, NULL, 16);
+      /*EXPR = strtol(sub_arg, NULL, 16);
       printf("0x%x :\t", EXPR);
       for (i = 0; i < N; i++)
       {
         printf("0x%.8x\t", paddr_read(EXPR + i*4, 4));
       }
-      printf("\n");
+      printf("\n");*/
+
+      expr(sub_arg, &regex_flag);
     }
      
   }

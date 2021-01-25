@@ -4,5 +4,6 @@
 #include <common.h>
 
 word_t expr(char *, bool *);
+void expr_test();
 
 #endif
