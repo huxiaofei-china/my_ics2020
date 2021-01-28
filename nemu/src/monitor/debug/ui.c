@@ -43,7 +43,13 @@ static int cmd_si(char *args);
 
 static int cmd_info(char* args);
 
+static int cmd_p(char* args);
+
 static int cmd_x(char* args);
+
+static int cmd_w(char* args);
+
+static int cmd_d(char* args);
 
 static struct {
   char *name;
@@ -55,8 +61,10 @@ static struct {
   { "q", "Exit NEMU", cmd_q },
   { "si", "Excute N step program, and stop. Usage: si N", cmd_si},
   { "info", "Print information of reg or watchpoint. Usage: info r|w", cmd_info},
+  { "p", "Print the value of EXPR. Usage: p EXPR", cmd_p},
   { "x", "Print data start from EXPR with length N. Usage: x N EXPR", cmd_x},
-
+  { "w", "Add a watchpoint EXPR. Usage: w EXPR", cmd_w}, 
+  { "d", "delete a watchpoint according to number. Usage: d N", cmd_d}
 };
 
 #define NR_CMD (sizeof(cmd_table) / sizeof(cmd_table[0]))
@@ -90,7 +98,8 @@ static int cmd_si(char* args)
 
   if (arg == NULL) {
     /* no argument given */
-    printf("si usage: si N (N is number program to excute)\n");
+    cpu_exec(1);
+    Log("si step 1, and current pc is: %x\n", cpu.pc);
   }
   else {
     int n = atoi(arg);
@@ -116,13 +125,20 @@ static int cmd_info(char* args)
     printf("info usage: info r|w \n");
   }
   else {
+    WP* header = NULL;
     switch (*arg)
     {
     case 'r': 
       isa_reg_display();
       break;
     case 'w':
-      Log("info w is excuted, but it's not implemented yet.\n");
+      header = get_wp_header();
+      printf("%.10s %.50s %.15s\n", "NO", "EXPRESS", "VALUE");
+      while (header != NULL)
+      {
+        printf("%.2u %.50s %.15u\n", header->NO, header->expr_str, header->expr_val);
+        header = header->next;
+      }
       break;
     default:
       Log("info wrong args! Usage: info r|w\n");
@@ -132,13 +148,33 @@ static int cmd_info(char* args)
   return 0;
 }
 
+static int cmd_p(char* args)
+{
+  char *arg = strtok(NULL, " ");
+  uint32_t EXPR;
+  bool regex_flag;
+  if (arg == NULL) {
+    /* no argument given */
+    printf("missing arg EXPR. p usage: p EXPR\n");
+  }
+  else {
+    EXPR = expr(arg, &regex_flag);
+    if (regex_flag == false)
+    {
+      printf("%s's value get failed\n", arg);
+      return 0;
+    }
+    printf("%s: %u\n", arg, EXPR);
+  }
+  return 0;
+}
+
 static int cmd_x(char* args)
 {
   char *arg = strtok(NULL, " ");
   char *sub_arg = NULL;
   uint32_t N;
-  //uint32_t EXPR;
-  //int i;
+  uint32_t EXPR;
   bool regex_flag;
   if (arg == NULL) {
     /* no argument given */
@@ -160,17 +196,63 @@ static int cmd_x(char* args)
     }
     else
     {
-      /*EXPR = strtol(sub_arg, NULL, 16);
-      printf("0x%x :\t", EXPR);
+      int i;
+      EXPR = expr(sub_arg, &regex_flag);
+      if (regex_flag == false)
+      {
+        printf("%s's value get failed\n", sub_arg);
+        return 0;
+      }
+      
+      printf("%s get value 0x%x :\t",sub_arg, EXPR);
       for (i = 0; i < N; i++)
       {
         printf("0x%.8x\t", paddr_read(EXPR + i*4, 4));
       }
-      printf("\n");*/
-
-      expr(sub_arg, &regex_flag);
+      printf("\n");
     }
      
+  }
+  return 0;
+}
+
+static int cmd_w(char* args)
+{
+  char *arg = strtok(NULL, " ");
+  uint32_t EXPR;
+  bool regex_flag;
+  if (arg == NULL) {
+    /* no argument given */
+    printf("missing arg EXPR. w usage: w EXPR\n");
+  }
+  else {
+    WP* wp = NULL;
+    EXPR = expr(arg, &regex_flag);
+    if (regex_flag == false)
+    {
+      printf("%s's value get failed\n", arg);
+      return 0;
+    }
+    wp = new_wp();
+    wp->expr_str = strdup(arg);
+    wp->expr_val = EXPR;
+    printf("add watch point %s, it's value is %u. watch point number:%d\n", arg, EXPR, wp->NO);
+  }
+  return 0;
+}
+
+static int cmd_d(char* args)
+{
+  char *arg = strtok(NULL, " ");
+  uint32_t N;
+  if (arg == NULL) {
+    /* no argument given */
+    printf("missing arg N. d usage: d N\n");
+  }
+  else {
+    N = atoi(arg);
+    free_wp(N);
+    printf("delete %d watch point\n", N);
   }
   return 0;
 }

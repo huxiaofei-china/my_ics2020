@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <isa.h>
 #include <stdio.h>
+#include <memory/paddr.h>
 
 /* We use the POSIX regex functions to process regular expressions.
  * Type 'man regex' for more information about POSIX regex functions.
@@ -8,7 +9,7 @@
 #include <regex.h>
 
 enum {
-  TK_NOTYPE = 256, TK_EQ, TK_NUM
+  TK_NOTYPE = 256, TK_EQ, TK_NUM, TK_HEX, TK_REG, TK_NOEQ, TK_ANDL, TK_DREF 
 };
 
 enum {
@@ -25,7 +26,11 @@ static struct rule {
    */
 
   {" +", TK_NOTYPE},    // spaces
+  {"0x[0-9]+", TK_HEX}, // hex number
+  {"\\$[a-z A-Z 0-9]+", TK_REG},// reg header
   {"==", TK_EQ},        // equal
+  {"!=", TK_NOEQ},      // no equal 
+  {"&&", TK_ANDL},      // logic and op
   {"[0-9]+", TK_NUM},   // number
   {"\\+", '+'},         // plus
   {"\\-", '-'},         // minus
@@ -69,7 +74,6 @@ static bool make_token(char *e) {
   int position = 0;
   int i;
   regmatch_t pmatch;
-
   nr_token = 0;
 
   while (e[position] != '\0') {
@@ -88,7 +92,9 @@ static bool make_token(char *e) {
           case TK_NOTYPE:
             break;
           case TK_NUM:
-            tokens[nr_token].type = TK_NUM;
+          case TK_HEX:
+          case TK_REG:
+            tokens[nr_token].type = rules[i].token_type;
             Assert(substr_len < sizeof(tokens[nr_token].str), "%s is too long\n", \
                     tokens[nr_token].str);
             memcpy(tokens[nr_token].str, e+position-substr_len, substr_len);
@@ -140,7 +146,7 @@ static int check_parentheses(int p, int q)
 static int find_master_op(int p, int q)
 {
   int i;
-  int op_level = 2;
+  int op_level = 5;
   int ret = -1;
   int parenth_sum = 0;
   for (i = p; i <= q; i++)
@@ -152,15 +158,31 @@ static int find_master_op(int p, int q)
 
     if (parenth_sum == 0)
     {
-      if ((tokens[i].type == '+') || (tokens[i].type == '-')) 
+      if ((tokens[i].type == TK_DREF) && (op_level >= 0))
+      {
+        op_level = 0;
+        ret = i;
+      }
+      else if ((tokens[i].type == '*' || tokens[i].type == '/') && (op_level >= 1)) 
       {
         op_level = 1;
         ret = i;
       }
-      if ((tokens[i].type == '*') || (tokens[i].type == '/'))
+      else if ((tokens[i].type == '+' || tokens[i].type == '-') && (op_level >= 2))
       {
-        if (op_level == 2) ret = i;
-      } 
+        op_level = 2;
+        ret = i;
+      }
+      else if ((tokens[i].type == TK_EQ || tokens[i].type == TK_NOEQ) && (op_level >= 3))
+      {
+        op_level = 3;
+        ret = i;
+      }
+      else if ((tokens[i].type == TK_ANDL) && (op_level >= 4))
+      {
+        op_level = 4;
+        ret = i;
+      }
     }
   }
   return ret; 
@@ -182,7 +204,26 @@ static u_int32_t eval(int p, int q, int* error_flag)
     else 
     {
       u_int32_t ret;
-      sscanf(tokens[p].str, "%u", &ret);
+      bool reg_success;
+      switch (tokens[p].type)
+      {
+      case TK_HEX:
+        sscanf((tokens[p].str)+2, "%x", &ret);
+        break;
+      case TK_NUM:
+        sscanf(tokens[p].str, "%u", &ret);
+        break;
+      case TK_REG:
+        ret = isa_reg_str2val((tokens[p].str)+1, &reg_success);
+        if (reg_success == true) break;
+        else
+        {
+          *error_flag = 1;
+          return 0;
+        }
+      default:
+        break;
+      }
       return ret;
     }
   }
@@ -205,6 +246,22 @@ static u_int32_t eval(int p, int q, int* error_flag)
         Log("can't find master op\n");
         return 0;
       }
+      if (tokens[op].type == TK_DREF)
+      {
+        if (op != p)
+        {
+          *error_flag  = 1;
+          Log("de-reference fault\n");
+          return 0;
+        }
+        else
+        {
+          u_int32_t de_expr = eval(op + 1, q, error_flag);
+          if(*error_flag == 1) return 0;
+          return paddr_read(de_expr, 4);
+        }
+      }
+      
       u_int32_t val1 = eval(p, op - 1, error_flag);
       u_int32_t val2 = eval(op + 1, q, error_flag);
       if (*error_flag == 1) return 0;
@@ -214,6 +271,9 @@ static u_int32_t eval(int p, int q, int* error_flag)
         case '-': return val1 - val2;
         case '*': return val1 * val2;
         case '/': return val1 / val2;
+        case TK_EQ : return val1 == val2;
+        case TK_NOEQ: return val1 != val2;
+        case TK_ANDL: return val1 && val2;
         default: assert(0);
       } 
     }
@@ -223,11 +283,27 @@ static u_int32_t eval(int p, int q, int* error_flag)
 
 word_t expr(char *e, bool *success) {
   int error_flag = 0;
+  int i;
   u_int32_t value = 0;
   if (!make_token(e)) {
     *success = false;
     return 0;
   }
+
+  for (i = 0; i < nr_token; i ++) {
+    if (tokens[i].type == '*' && (i == 0 || tokens[i - 1].type == '+'\
+                                         || tokens[i - 1].type == '-'\
+                                         || tokens[i - 1].type == '*'\
+                                         || tokens[i - 1].type == '/'\
+                                         || tokens[i - 1].type == '('\
+                                         || tokens[i - 1].type == TK_EQ\
+                                         || tokens[i - 1].type == TK_NOEQ\
+                                         || tokens[i - 1].type == TK_ANDL ))
+    {
+      tokens[i].type = TK_DREF;
+    }
+  }
+
   value = eval(0, nr_token-1, &error_flag);
   if (error_flag == 1) 
   {
@@ -238,6 +314,7 @@ word_t expr(char *e, bool *success) {
   else 
   {
     Log("get the express is %u", value);
+    *success = true;
     return value;
   }
 }

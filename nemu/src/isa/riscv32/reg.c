@@ -10,14 +10,30 @@ const char *regsl[] = {
 
 void isa_reg_display() {
   int i;
-  printf("pc: %x\t", cpu.pc);
+  printf("pc: 0x%.8x\t", cpu.pc);
   for (i = 0; i < (sizeof(cpu.gpr)/sizeof(cpu.gpr[0])); i++)
   {
-    printf("%s: %x\t", regsl[i], cpu.gpr[i]._32);
+    printf("%s: 0x%.8x\t", regsl[i], cpu.gpr[i]._32);
   }
   printf("\n");
 }
 
 word_t isa_reg_str2val(const char *s, bool *success) {
+  int i;
+  if (strcmp("pc", s) == 0)
+  {
+    *success = true;
+    return cpu.pc;
+  }
+  for (i = 0; i < (sizeof(cpu.gpr)/sizeof(cpu.gpr[0])); i++)
+  {
+    if (strcmp(regsl[i], s) == 0)
+    {
+      *success = true;
+      return cpu.gpr[i]._32;
+    }
+  }
+  Log("can't find the reg named %s", s);
+  *success = false;
   return 0;
 }
